@@ -319,6 +319,7 @@ export default function JobResults() {
                             </div>
                           )}
 
+                          {/* Fixed: Extract company name from object */}
                           {(result.ai_analysis as any).companies && (result.ai_analysis as any).companies.length > 0 && (
                             <div>
                               <span className="font-medium text-foreground">Companies detected: </span>
@@ -342,7 +343,7 @@ export default function JobResults() {
                             </div>
                           )}
 
-                          {/* Legacy format support */}
+                          {/* Fixed: Handle legacy format - extract names from company objects */}
                           {result.ai_analysis.summary && (
                             <p className="text-muted-foreground">{result.ai_analysis.summary}</p>
                           )}
@@ -353,7 +354,7 @@ export default function JobResults() {
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {result.ai_analysis.companies.map((company, idx) => (
                                   <Badge key={idx} variant="outline" className="text-xs">
-                                    {company}
+                                    {typeof company === 'string' ? company : company?.name || 'Unknown'}
                                   </Badge>
                                 ))}
                               </div>
