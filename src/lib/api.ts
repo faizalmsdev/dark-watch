@@ -45,11 +45,29 @@ export interface ApiResponse<T = any> {
 }
 
 class ApiClient {
+  private getStoredAuth() {
+    const auth = localStorage.getItem('auth');
+    return auth ? JSON.parse(auth) : null;
+  }
+
+  private setStoredAuth(email: string, password: string) {
+    localStorage.setItem('auth', JSON.stringify({ email, password }));
+  }
+
+  private clearStoredAuth() {
+    localStorage.removeItem('auth');
+  }
+
+  isAuthenticated(): boolean {
+    return this.getStoredAuth() !== null;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
+    const auth = this.getStoredAuth();
     
     const config: RequestInit = {
       credentials: 'include',
@@ -59,6 +77,15 @@ class ApiClient {
       },
       ...options,
     };
+
+    // Add basic auth if we have stored credentials and it's not a login/register endpoint
+    if (auth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+      const basicAuth = btoa(`${auth.email}:${auth.password}`);
+      config.headers = {
+        ...config.headers,
+        'Authorization': `Basic ${basicAuth}`,
+      };
+    }
 
     const response = await fetch(url, config);
     
@@ -72,23 +99,33 @@ class ApiClient {
 
   // Auth endpoints
   async register(email: string, password: string): Promise<ApiResponse<{ user: User }>> {
-    return this.request('/api/auth/register', {
+    const response = await this.request<ApiResponse<{ user: User }>>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    if (response.success) {
+      this.setStoredAuth(email, password);
+    }
+    return response;
   }
 
   async login(email: string, password: string): Promise<ApiResponse<{ user: User }>> {
-    return this.request('/api/auth/login', {
+    const response = await this.request<ApiResponse<{ user: User }>>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+    if (response.success) {
+      this.setStoredAuth(email, password);
+    }
+    return response;
   }
 
   async logout(): Promise<ApiResponse> {
-    return this.request('/api/auth/logout', {
+    const response = await this.request<ApiResponse>('/api/auth/logout', {
       method: 'POST',
     });
+    this.clearStoredAuth();
+    return response;
   }
 
   async getProfile(): Promise<ApiResponse<{ user: User }>> {
