@@ -56,6 +56,12 @@ export default function JobResults() {
 
   const getChangeTypeColor = (type: string) => {
     switch (type.toLowerCase()) {
+      case 'new_portfolio_companies':
+        return 'bg-success/20 text-success border-success/30';
+      case 'text_change':
+        return 'bg-primary/20 text-primary border-primary/30';
+      case 'new_images':
+        return 'bg-accent/20 text-accent border-accent/30';
       case 'content_change':
         return 'bg-primary/20 text-primary border-primary/30';
       case 'structure_change':
@@ -66,6 +72,13 @@ export default function JobResults() {
         return 'bg-muted/20 text-muted-foreground border-muted/30';
     }
   };
+
+  // Sort results to prioritize new portfolio companies
+  const sortedResults = [...results].sort((a, b) => {
+    if (a.type === 'new_portfolio_companies' && b.type !== 'new_portfolio_companies') return -1;
+    if (b.type === 'new_portfolio_companies' && a.type !== 'new_portfolio_companies') return 1;
+    return new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime();
+  });
 
   if (isLoading) {
     return (
@@ -167,7 +180,7 @@ export default function JobResults() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {results.map((result, index) => (
+              {sortedResults.map((result, index) => (
                 <Card 
                   key={index} 
                   className="p-6 bg-gradient-card border-border hover:border-primary/50 transition-all duration-300"
@@ -188,7 +201,82 @@ export default function JobResults() {
                       </div>
                     </div>
 
-                    {/* Content Changes */}
+                    {/* New Portfolio Companies (Priority) */}
+                    {result.type === 'new_portfolio_companies' && (result as any).company_names && (
+                      <div className="space-y-3 p-4 bg-success/10 border border-success/30 rounded-md">
+                        <h4 className="text-sm font-medium text-success flex items-center gap-2">
+                          🎯 New Portfolio Companies Detected
+                        </h4>
+                        <div className="space-y-3">
+                          {(result as any).company_names.map((company: string, idx: number) => (
+                            <div key={idx} className="p-3 bg-success/5 border border-success/20 rounded-md">
+                              <h5 className="font-semibold text-success text-lg">{company}</h5>
+                              {(result as any).details?.[idx] && (
+                                <div className="mt-2 text-sm text-muted-foreground">
+                                  <p><strong>Context:</strong> {(result as any).details[idx].context}</p>
+                                  <p><strong>HTML Tag:</strong> {(result as any).details[idx].html_tag}</p>
+                                  {(result as any).details[idx].parent_classes && (
+                                    <p><strong>Classes:</strong> {(result as any).details[idx].parent_classes.join(', ')}</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Text Changes with Before/After */}
+                    {result.type === 'text_change' && (result as any).before_after && (
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-destructive">Before</h4>
+                          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm max-h-32 overflow-y-auto">
+                            <code className="text-destructive break-all whitespace-pre-wrap">
+                              {(result as any).before_after.before}
+                            </code>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-success">After</h4>
+                          <div className="p-3 bg-success/10 border border-success/20 rounded-md text-sm max-h-32 overflow-y-auto">
+                            <code className="text-success break-all whitespace-pre-wrap">
+                              {(result as any).before_after.after}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New Images */}
+                    {result.type === 'new_images' && (result as any).details && (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-medium text-accent">New Images Added</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {(result as any).details.map((imageDetail: any, idx: number) => (
+                            <div key={idx} className="p-3 bg-accent/10 border border-accent/20 rounded-md">
+                              {imageDetail.src && (
+                                <img 
+                                  src={imageDetail.src} 
+                                  alt={imageDetail.alt || 'New image'} 
+                                  className="w-full h-32 object-cover rounded mb-2"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <div className="text-sm space-y-1">
+                                <p><strong>Alt text:</strong> {imageDetail.alt || 'None'}</p>
+                                <p><strong>Context:</strong> {imageDetail.context}</p>
+                                <p className="break-all"><strong>Source:</strong> {imageDetail.src}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Legacy Content Changes */}
                     {(result.old_content || result.new_content) && (
                       <div className="grid md:grid-cols-2 gap-4">
                         {result.old_content && (
@@ -219,8 +307,45 @@ export default function JobResults() {
                           AI Analysis
                         </h4>
                         
-                        <div className="space-y-2 text-sm">
-                          <p className="text-muted-foreground">{result.ai_analysis.summary}</p>
+                        <div className="space-y-3 text-sm">
+                          {(result.ai_analysis as any).analysis_summary && (
+                            <p className="text-muted-foreground">{(result.ai_analysis as any).analysis_summary}</p>
+                          )}
+                          
+                          {(result.ai_analysis as any).added_company && (
+                            <div className="p-2 bg-success/10 border border-success/20 rounded">
+                              <span className="font-medium text-success">Added Company: </span>
+                              <span className="text-success">{(result.ai_analysis as any).added_company}</span>
+                            </div>
+                          )}
+
+                          {(result.ai_analysis as any).companies && (result.ai_analysis as any).companies.length > 0 && (
+                            <div>
+                              <span className="font-medium text-foreground">Companies detected: </span>
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {(result.ai_analysis as any).companies.map((company: any, idx: number) => (
+                                  <div key={idx} className="p-2 bg-primary/10 border border-primary/20 rounded text-xs">
+                                    <div className="font-medium">{company.name}</div>
+                                    <div className="text-muted-foreground">
+                                      {company.sector} • {company.confidence} confidence
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {(result.ai_analysis as any).new_companies_detected && (
+                            <div className="flex items-center gap-2 text-warning">
+                              <AlertCircle className="w-4 h-4" />
+                              <span className="font-medium">New companies detected!</span>
+                            </div>
+                          )}
+
+                          {/* Legacy format support */}
+                          {result.ai_analysis.summary && (
+                            <p className="text-muted-foreground">{result.ai_analysis.summary}</p>
+                          )}
                           
                           {result.ai_analysis.companies && result.ai_analysis.companies.length > 0 && (
                             <div>
@@ -232,13 +357,6 @@ export default function JobResults() {
                                   </Badge>
                                 ))}
                               </div>
-                            </div>
-                          )}
-                          
-                          {result.ai_analysis.new_companies_detected && (
-                            <div className="flex items-center gap-2 text-warning">
-                              <AlertCircle className="w-4 h-4" />
-                              <span className="font-medium">New companies detected!</span>
                             </div>
                           )}
                         </div>
