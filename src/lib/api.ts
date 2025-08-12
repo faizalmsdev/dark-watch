@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'http://209.74.95.163:5000';
 
 export interface User {
   user_id: string;
@@ -44,22 +44,45 @@ export interface ApiResponse<T = any> {
   [key: string]: any;
 }
 
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  user: User;
+  token: string; // The user_id token for API access
+}
+
 class ApiClient {
-  private getStoredAuth() {
-    const auth = localStorage.getItem('auth');
-    return auth ? JSON.parse(auth) : null;
+  private getStoredToken(): string | null {
+    return localStorage.getItem('auth_token');
   }
 
-  private setStoredAuth(email: string, password: string) {
-    localStorage.setItem('auth', JSON.stringify({ email, password }));
+  private setStoredToken(token: string): void {
+    localStorage.setItem('auth_token', token);
   }
 
-  private clearStoredAuth() {
-    localStorage.removeItem('auth');
+  private clearStoredToken(): void {
+    localStorage.removeItem('auth_token');
+  }
+
+  private getStoredUser(): User | null {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  }
+
+  private setStoredUser(user: User): void {
+    localStorage.setItem('user', JSON.stringify(user));
+  }
+
+  private clearStoredUser(): void {
+    localStorage.removeItem('user');
   }
 
   isAuthenticated(): boolean {
-    return this.getStoredAuth() !== null;
+    return this.getStoredToken() !== null;
+  }
+
+  getCurrentUser(): User | null {
+    return this.getStoredUser();
   }
 
   private async request<T>(
@@ -67,10 +90,10 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
-    const auth = this.getStoredAuth();
+    const token = this.getStoredToken();
     
     const config: RequestInit = {
-      credentials: 'include',
+      credentials: 'include', // Include cookies for session-based auth as fallback
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
@@ -78,54 +101,92 @@ class ApiClient {
       ...options,
     };
 
-    // Add basic auth if we have stored credentials and it's not a login/register endpoint
-    if (auth && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
-      const basicAuth = btoa(`${auth.email}:${auth.password}`);
+    // Add token authentication if we have a token and it's not a login/register endpoint
+    if (token && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
       config.headers = {
         ...config.headers,
-        'Authorization': `Basic ${basicAuth}`,
+        'Authorization': `Bearer ${token}`, // Using Bearer token method
+        // Alternative methods (uncomment to use instead):
+        // 'X-User-Token': token,
       };
     }
 
-    const response = await fetch(url, config);
-    
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || `HTTP ${response.status}`);
-    }
+    try {
+      const response = await fetch(url, config);
+      
+      if (!response.ok) {
+        // Handle authentication errors
+        if (response.status === 401) {
+          this.clearStoredToken();
+          this.clearStoredUser();
+          throw new Error('Authentication failed. Please login again.');
+        }
+        
+        let errorMessage;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || `HTTP ${response.status}`;
+        } catch {
+          errorMessage = `HTTP ${response.status}`;
+        }
+        throw new Error(errorMessage);
+      }
 
-    return response.json();
+      return response.json();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Authentication failed')) {
+        // Re-throw auth errors
+        throw error;
+      }
+      // Handle network errors
+      throw new Error(`Network error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // Auth endpoints
-  async register(email: string, password: string): Promise<ApiResponse<{ user: User }>> {
-    const response = await this.request<ApiResponse<{ user: User }>>('/api/auth/register', {
+  async register(email: string, password: string): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    if (response.success) {
-      this.setStoredAuth(email, password);
+    
+    if (response.success && response.token) {
+      this.setStoredToken(response.token);
+      this.setStoredUser(response.user);
     }
+    
     return response;
   }
 
-  async login(email: string, password: string): Promise<ApiResponse<{ user: User }>> {
-    const response = await this.request<ApiResponse<{ user: User }>>('/api/auth/login', {
+  async login(email: string, password: string): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    if (response.success) {
-      this.setStoredAuth(email, password);
+    
+    if (response.success && response.token) {
+      this.setStoredToken(response.token);
+      this.setStoredUser(response.user);
     }
+    
     return response;
   }
 
   async logout(): Promise<ApiResponse> {
-    const response = await this.request<ApiResponse>('/api/auth/logout', {
-      method: 'POST',
-    });
-    this.clearStoredAuth();
-    return response;
+    try {
+      const response = await this.request<ApiResponse>('/api/auth/logout', {
+        method: 'POST',
+      });
+      return response;
+    } catch (error) {
+      // Even if logout fails on server, clear local storage
+      console.warn('Logout request failed:', error);
+      return { success: false, message: 'Logout request failed but local session cleared' };
+    } finally {
+      // Always clear local storage on logout
+      this.clearStoredToken();
+      this.clearStoredUser();
+    }
   }
 
   async getProfile(): Promise<ApiResponse<{ user: User }>> {
@@ -190,6 +251,37 @@ class ApiClient {
   async getHealth(): Promise<ApiResponse> {
     return this.request('/api/health');
   }
+
+  // Utility methods
+  getAuthToken(): string | null {
+    return this.getStoredToken();
+  }
+
+  // Manual token login (if you get a token from elsewhere)
+  loginWithToken(token: string, user: User): void {
+    this.setStoredToken(token);
+    this.setStoredUser(user);
+  }
+
+  // Check if current token is valid
+  async validateToken(): Promise<boolean> {
+    try {
+      await this.getProfile();
+      return true;
+    } catch {
+      this.clearStoredToken();
+      this.clearStoredUser();
+      return false;
+    }
+  }
 }
 
 export const apiClient = new ApiClient();
+
+// Optional: Auto-validate token on app start
+export const initializeAuth = async (): Promise<boolean> => {
+  if (apiClient.isAuthenticated()) {
+    return await apiClient.validateToken();
+  }
+  return false;
+};
