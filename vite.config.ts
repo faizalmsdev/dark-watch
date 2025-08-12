@@ -8,11 +8,18 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      // Forward API calls to backend
+      "/api": {
+        target: " http://209.74.95.163:5000/", 
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   plugins: [
     react(),
-    mode === 'development' &&
-    componentTagger(),
+    mode === 'development' && componentTagger(),
   ].filter(Boolean),
   resolve: {
     alias: {
