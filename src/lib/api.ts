@@ -1,4 +1,6 @@
 const API_BASE_URL = 'http://209.74.95.163:5000';
+// const API_BASE_URL = 'http://localhost:5000';
+
 
 export interface User {
   user_id: string;
@@ -152,7 +154,11 @@ class ApiClient {
     
     if (response.success && response.token) {
       this.setStoredToken(response.token);
-      this.setStoredUser(response.user);
+      if (typeof response.user === 'object' && response.user !== null) {
+        this.setStoredUser(response.user);
+      } else {
+        console.error('Invalid user object in response:', response.user);
+      }
     }
     
     return response;
@@ -166,7 +172,11 @@ class ApiClient {
     
     if (response.success && response.token) {
       this.setStoredToken(response.token);
-      this.setStoredUser(response.user);
+      if (typeof response.user === 'object' && response.user !== null) {
+        this.setStoredUser(response.user);
+      } else {
+        console.error('Invalid user object in response:', response.user);
+      }
     }
     
     return response;
